@@ -4,11 +4,15 @@ author: "noootsab"
 date: '2014-08-16'
 output: pdf_document
 ---
+```{r echo=F, results='hide'}
+knitr::opts_chunk$set(echo=F)
+```
+
 
 ## Summary
 Analyse cars data to detect if some difference exists between gaz consumption of manual cars, or automatic ones.
 
-For that, we'll use the data from mtcars which containing 11 measures for 32 cars ~70.
+For that, we'll use the data from mtcars which containing 11 measures for 32 cars from the years 73-74.
 
 In the following sections we'll explain why we think that the difference between the manual and automatic transmission is statically significant. But also, we'll see that the weight has a dramatic importance when choosing a car's transmission regarding mpg.
 
@@ -16,53 +20,153 @@ In fact, when the car is light enough (~1000lb), manual transmission is initiall
 However, when the weight increases, there is a decrease of the mpg of (around) -7 for the manual cars, and only -3 for the automatic ones.
 Thus, starting, with cars more than 3500lb, the automatic cars should be the choice of preference.
 
+As a side note, if we had only looked at mean within group we would have always preferred manual cars to automatic, but this is influenced by the fact that the dataset has a few number of lighter cars and all are automatic! See ([fig-3](#fig-3)).
+
+The code can be found on [github](https://github.com/andypetrella/regression-model-datsci-track-coursera).
+
 ## Analysis
 
-a look at data
-> head
+First of all we're going to load the data, `mtcars`, avaible in R's package `datasets`.
+Then we'll head into to look at what it contains (and adapt the types if necessary).
+```{r size="footnotesize"}
+library(datasets)
+data(mtcars)
+mtcars$am <- factor(x=mtcars$am, labels=c("Automatic", "Manual"))
+head(mtcars)
+```
+So there are `r dim(mtcars)[1]` observations of cars and `r dim(mtcars)[2]` measures.
 
-give the mean of both population
-> mean manual
-> mean automatic
+We're interested in the role playing by the transmission (`am`) in the evolution of miles/gallon consumption (`mpg`).
 
-See more in the boxplot in the appendix
-> boxplot, showing the clear difference
+To see a visual interpretation of the relation between the two, a boxplot is available in the appendix ([fig-1](#fig-1)). Still visualy, it looks like the difference between the two groups (manual and automatic transmissions) is true, let's see the mean of each first and then perform a between two-groups t-test (assuming normality and independence).
+```{r}
+cars.auto <- mtcars[mtcars$am == "Automatic",]$mpg
+cars.manu <- mtcars[mtcars$am == "Manual",]$mpg
+tt <- t.test(cars.manu, cars.auto)
 
-To ensure that the difference is significant, we can test both pops using t test, the indenpendence between population is clear (but assuming normality).
-> t.test
+mean.manu <- tt$estimate[1]
+mean.auto <-tt$estimate[2]
+```
+Sounds good, the difference between both is significant (p-value `r tt$p.value`) and the 95% confidence interval doesn't contains 0, and thus, at this stage, we can say that the manual cars are better than automatic cars from `r tt$conf.int[1]` to `r tt$conf.int[2]` miles per galon.
 
-Maybe the am is sufficient to model the mpg
-> fit mpg am
-> low R² => need more
+However, using the transmission alone is not enough to quantify the difference for specific cases. To see that, we can look at the prediction of mile per gallon using the single transmission independent variable in a linear regression.
+```{r}
+fit.am <- lm(mpg ~ am, data=mtcars)
+fit.am.sy <- summary(fit.am)
+```
+So the relation between the to is rather clear, with p-value of the change being `r coef(fit.am.sy)[2, 4]`. However, the variance explained is quite low, with an `R²` at `r fit.am.sy$r.squared`. So something is missing in the mix.
 
-load leaps for stepwise model selection (since n <<)
-> best + forward + backward
+In order to find another model explaining better the miles per gallon, we'll use the best model selection since our dataset is quite small. For the sake of sanity, models selected by the stepwise method (forward and backward) have been ran, and they were only diverging at the third variable selecting `hp` or `qsec`. To run these selections, we'll use the useful package `leaps`.
 
-The forward and backward are diverging (qsec, hp) at the third model, however they both select wt at first.
-However, best model selection cuts the choice by selecting am with wt and qsec.
+```{r echo=FALSE, results='hide'}
+library(leaps)
+best.fits <- regsubsets(mpg ~ ., data=mtcars, force.in=c("amManual"))
+summary(best.fits)
 
-So let's fit these variables in a linear regression.
-> lm without interaction
+# best fits but forcing am in
+summary(regsubsets(mpg ~ ., data=mtcars, method="forward", force.in = c("amManual")))
+summary(regsubsets(mpg ~ ., data=mtcars, method="backward", force.in = c("amManual")))
 
-Quite good, but maybe could we improve it a bit by looking if am is or not interacting with other variables.
-Like with wt, it's a good choice since it's so importance in explaining mpeg.
-See in the appendix how wt and mpg are related in presence of am.
-> plot wt mpg with am
+# including hp is still low in R²
+summary(lm(mpg ~ am + hp, mtcars))
 
-If we draw a regression line per group, it gives us the impression that wt and am are interacting, and actually could inverse the relation with mpg at some point.
-Let's add this interaction to the model
-> lm with interaction
+# hp and wt is not considered because it removes am 
+summary(lm(mpg ~ am + hp + wt, mtcars))
 
-Now we can test how this new variable in the model is significant to explain the variance, for this we can run an anova
-> anova
+# cyl and wt is not considered because it removes am 
+summary(lm(mpg ~ am + cyl + wt, mtcars))
 
->>>>>>
-Including interaction with qsec? Will considerably change the model
-<<<<<<
+fit.am.wt <- lm(mpg ~ wt + am, data=mtcars)
+fit.am.wt.sy <- summary(fit.am.wt)
 
-We can have a quick look at the VIF of the models.
-> vif
-> vif
+fit.am.wt.int <- lm(mpg ~ wt * am, data=mtcars)
+fit.am.wt.int.sy <- summary(fit.am.wt.int)
 
-Okay, looks like the model including the interaction inflates the variance due to colinearity, but we could have foresee it regarding the plots we've seen.
-However, still it's inclusion allow better explaination of the difference between the groups.
+fit.wt.qsec.am <- lm(mpg ~ wt + qsec + am, data=mtcars)
+fit.wt.qsec.am.sy <- summary(fit.wt.qsec.am)
+```
+
+After playing around, `wt` is the first candidate to try out. A visual representation on how `mpg` is related to both `am` and `wt`, a plot has been provided in the appendix [fig-2](#fig-2). The linear regression involving both is increasing `R²` to `r fit.am.wt.sy$r.squared`, however the effect of the change of `am` is not more significant.
+To solve that, we'll will increase the model by adding the `qsec` (based on the model selection results above). Now the model has a `R²` of `r fit.wt.qsec.am.sy$p.value`.
+
+Nevertheless, the [fig-2](#fig-2) is more or less showing an interaction between `wt` and `am`. So, we're going to add this interaction to the moedl and check if it's significant.
+
+```{r}
+fit.wt.qsec.am.int <- lm(mpg ~ wt*am + qsec, data=mtcars)
+fit.wt.qsec.am.int.sy <- summary(fit.wt.qsec.am.int)
+coef(fit.wt.qsec.am.int.sy)
+```
+
+That's interesting, not only the coefficient are all significant but the new interaction term is explaining more intuitively how the weight of a car is affecting the miles per gallon consumption when it's a manual or an automatic. That's to say, a manual car is worst by a factor of `r coef(fit.wt.qsec.am.int)[5]` per 1000lb increase in weigth. 
+Last but not least, this regression is showing a pretty good residual plot and doesn't present evidence of outliers - see figures after [fig-4](#fig-4), specially the Cook's distance.
+
+
+Now we can test how this new variable (interaction) in the model is significant to explain the variance, for this we can run an anova.
+```{r results='hide'}
+an <- anova(fit.wt.qsec.am, fit.wt.qsec.am.int)
+```
+Great, sounds like it's fair enough to include it, since the p-value is `r an["Pr(>F)"][2,1]`!
+
+For the sake of sanity, we can have a quick look at the VIF of the models, using the `vif` function in the `car` package.
+Without interaction, we have this very good VIF:
+```{r}
+library(car)
+vif(fit.wt.qsec.am)
+```
+However, with the interaction we have this one:
+```{r}
+vif(fit.wt.qsec.am.int)
+```
+
+Okay, looks like the model including the interaction inflates the variance due to colinearity, but we could have foresee it regarding [fig-2](#fig-2).
+However, still it's inclusion allow better explanation of the difference between the groups.
+
+## Appendix
+
+<a name="fig-1"></a>
+```{r}
+plot(mtcars$am, mtcars$mpg, main = "Miles per gallon by transmission type", ylab="Miles per gallon")
+```
+
+<a name="fig-2"></a>
+```{r}
+plot(mtcars$wt, mtcars$mpg, col=mtcars$am, ylab="Miles per gallon", xlab="Car's weight (1/1000lb)",
+     main="Miles per gallon explained by the car's weight and transmission")
+legend(x="topright", legend = levels(mtcars$am), col=c("black", "red"), lwd = 1) 
+
+
+abline(coef(fit.am.wt.int )[1], coef(fit.am.wt.int )[2], col="black")
+abline(coef(fit.am.wt.int )[1]+coef(fit.am.wt.int )[3], coef(fit.am.wt.int )[2]+coef(fit.am.wt.int )[4], col="red")
+abline(v=3.5, lwd=3, col="green")
+text(x=3.2, 32, labels = "3500lb", cex=0.7, col="green")
+```
+
+<a name="fig-3"></a>
+```{r}
+hist(mtcars$wt, main = "Number of cars per weigth slots", breaks = seq(0, 6, by=0.5), xlab="Cars weight (1/1000lb)", ylab="Number of cars", ylim = c(0,10))
+abline(v=3.5, lwd=3, col="red")
+text(x=3.2, 9.6, labels = "3500lb", cex=0.7, col="red")
+text(x=2, 6.5, labels = paste("", sum(mtcars$wt <= 3.5), " cars"), cex=0.7)
+text(x=5, 6.5, labels = paste("", sum(mtcars$wt > 3.5), " cars"), cex=0.7)
+```
+
+
+<a name="fig-4"></a>
+```{r}
+plot(fit.wt.qsec.am.int, which=1)
+text(10.5, 4.2, paste("mean: ", format(mean(resid(fit.wt.qsec.am.int)), digits=3)), cex=1, col="blue", pos = 4)
+text(10.5, 3.4, paste("sd: ", format(sd(resid(fit.wt.qsec.am.int)), digits=3)), cex=1, col="blue", pos=4)
+title(main="Linear regression mpg ~ am*wt + qsec")
+```
+
+
+
+```{r}
+plot(fit.wt.qsec.am.int, which=2)
+```
+
+
+
+```{r}
+plot(fit.wt.qsec.am.int, which=4)
+```

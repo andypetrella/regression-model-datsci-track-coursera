@@ -35,13 +35,23 @@ summary(simple.fit)
 
 
 # find the best models for mpg using backward stepwise reg
-best.fits <- regsubsets(mpg ~ ., data=mtcars, method="backward")
+best.fits <- regsubsets(mpg ~ ., data=mtcars, force.in=c("amManual"))
 summary(best.fits)
 
 # best fits but forcing am in
 summary(regsubsets(mpg ~ ., data=mtcars, method="forward", force.in = c("amManual")))
 summary(regsubsets(mpg ~ ., data=mtcars, method="backward", force.in = c("amManual")))
 
+# including hp is still low in R²
+summary(lm(mpg ~ am + hp, mtcars))
+
+# hp and wt is not considered because it removes am 
+summary(lm(mpg ~ am + hp + wt, mtcars))
+
+# cyl and wt is not considered because it removes am 
+summary(lm(mpg ~ am + cyl + wt, mtcars))
+
+#let's see with wt alone
 # wt is always picked early
 plot(mtcars$wt, mtcars$mpg, col=mtcars$am)
 
